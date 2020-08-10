@@ -32,6 +32,10 @@ func (v *Vec3f) Norm() float64 {
 	return math.Sqrt(v.Dot(v))
 }
 
+func (v *Vec3f) Normalize() *Vec3f {
+	return v.ScalarMul(1.0/v.Norm())
+}
+
 func (v *Vec3f) ScalarMul(a float64) *Vec3f {
 	v.X *= a
 	v.Y *= a
@@ -57,7 +61,73 @@ func generateCube(corner *Vec3f, sideLength int) []Vec3f {
 	return pts
 }
 
-func render(pts []Vec3f, lightSource Vec3f, lightIntensity, xs, ys, zs int) [][]float64 {
+type PointIterator interface {
+	Generate() <-chan [2]Vec3f
+}
+
+type CubeGenerator struct {
+	Corner 		Vec3f
+	SideLength  float64
+	Step 		float64
+}
+
+/*
+Creates a CubeGenerator instance and returns a pointer to it.
+
+Parameters :
+corner : coordinates of the corner with the lowest x, y, z values
+sideLength : length of a side of the cube
+*/
+func NewCubeGenerator(corner Vec3f, sideLength, step float64) *CubeGenerator {
+	return &CubeGenerator{corner, sideLength, step}
+}
+
+func (g *CubeGenerator) Generate() <-chan [2]Vec3f {
+	nPts := int(g.SideLength*g.SideLength*6 - g.SideLength*12)
+	c := make(chan [2]Vec3f, nPts)
+	go func() {
+		var r [2]Vec3f
+		for z := 0.0; z < 2; z++ {
+			r[1]   = Vec3f{Z: 2*z-1}
+			r[0].Z = g.Corner.Z + z*(g.SideLength-1)
+			for y := 0.0; y < g.SideLength; y += g.Step {
+				for x := 0.0; x < g.SideLength; x += g.Step {
+					r[0].X = g.Corner.X+x
+					r[0].Y = g.Corner.Y+y 
+					c <- r
+				}
+			}
+		}
+
+		for y := 0.0; y < 2; y++ {
+			r[1]   = Vec3f{Y: 2*y-1}
+			r[0].Y = g.Corner.Y + y*(g.SideLength-1)
+			for z := 0.0; z < g.SideLength; z += g.Step {
+				for x := 0.0; x < g.SideLength; x += g.Step {
+					r[0].X = g.Corner.X+x
+					r[0].Z = g.Corner.Z+z
+					c <- r
+				}
+			}
+		}
+
+		for x := 0.0; x < 2; x++ {
+			r[1]   = Vec3f{X: 2*x-1}
+			r[0].X = g.Corner.X + x*(g.SideLength-1)
+			for z := 0.0; z < g.SideLength; z += g.Step {
+				for y := 0.0; y < g.SideLength; y += g.Step {
+					r[0].Y = g.Corner.Y+y
+					r[0].Z = g.Corner.Z+z
+					c <- r
+				}
+			}
+		}
+		close(c)
+	}()
+	return c
+}
+
+func render(pts PointIterator, lightSource Vec3f, lightIntensity, xs, ys, zs int) [][]float64 {
 	xs++
 	ys++
 	zs++
@@ -72,26 +142,25 @@ func render(pts []Vec3f, lightSource Vec3f, lightIntensity, xs, ys, zs int) [][]
 		zbuf[i] = zbufUnderlying[i*xs:i*xs+xs]
 	}
 
-	for _, pt := range pts {
+	for r := range pts.Generate() {
+		pt := r[0]
 		x, y, z := pt.X-camera.X, pt.Y-camera.Y, pt.Z-camera.Z
 		xp := int(float64(zs)/z * x + camera.X)
 		yp := int(float64(zs)/z * y + camera.Y)
-		inv_z := 1.0/float64(z)
+		inv_z := 1.0/z
 		if xp>0 && xp<xs && 
 		   yp>0 && yp<ys && 
 		   inv_z > zbuf[yp][xp] {
 			zbuf[yp][xp] = inv_z
 
 			//Calculate lighting
-			//d : 		from light source to point
-			//x, y, z : from camera       to point
-			//should be surface normal...
+			//d : from light source to point
 			d := pt
-			d.Sub(&lightSource)
-			t := Vec3f{x, y, z}
-			fmt.Println(d)
-			light := d.Dot(&t)
-			pix[yp][xp] = light * float64(lightIntensity) / (d.Norm()*t.Norm())
+			d.Sub(&lightSource).Normalize()
+			d = Vec3f{Z:1}
+			normal := r[1]
+			light := d.Dot(&normal)
+			pix[yp][xp] = light * float64(lightIntensity)
 		}
 	}
 	return pix
@@ -116,15 +185,18 @@ func display(pix [][]float64) {
 }
 
 func main() {
-	pts := generateCube(&Vec3f{10, 10, 8}, 3)
-	pix := render(pts, Vec3f{0, -2, 0}, 12, 15, 15, 15)
+	//pts := generateCube(&Vec3f{10, 10, 8}, 3)
+	g := NewCubeGenerator(Vec3f{10, 10, 8}, 3, 1)
+	pix := render(g, Vec3f{0, -2, 0}, 12, 15, 15, 15)
 	display(pix)
 
 	time.Sleep(3*time.Second)
 
-	pts = generateCube(&Vec3f{3, 10, 8}, 3)
-	pix = render(pts, Vec3f{0, -2, 0}, 12, 15, 15, 15)
+	//pts = generateCube(&Vec3f{3, 10, 8}, 3)
+	g = NewCubeGenerator(Vec3f{3, 10, 8}, 3, 1)
+	pix = render(g, Vec3f{0, -2, 0}, 12, 15, 15, 15)
 	display(pix)
+	
 }
 
 /*
@@ -141,4 +213,5 @@ Questions along the way :
 
 TODO :
 1) Min / max z distance for points
+2) Return error for PointIterator::Generate
 */
