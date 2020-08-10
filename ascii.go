@@ -142,6 +142,10 @@ func render(pts PointIterator, lightSource Vec3f, lightIntensity, xs, ys, zs int
 		zbuf[i] = zbufUnderlying[i*xs:i*xs+xs]
 	}
 
+	//d = opposite of light direction, temporary
+	d := Vec3f{0, -1, 0}
+	d.Normalize()
+	fmt.Println(d)
 	for r := range pts.Generate() {
 		pt := r[0]
 		x, y, z := pt.X-camera.X, pt.Y-camera.Y, pt.Z-camera.Z
@@ -154,10 +158,6 @@ func render(pts PointIterator, lightSource Vec3f, lightIntensity, xs, ys, zs int
 			zbuf[yp][xp] = inv_z
 
 			//Calculate lighting
-			//d : from light source to point
-			d := pt
-			d.Sub(&lightSource).Normalize()
-			d = Vec3f{Z:1}
 			normal := r[1]
 			light := d.Dot(&normal)
 			pix[yp][xp] = light * float64(lightIntensity)
@@ -167,7 +167,7 @@ func render(pts PointIterator, lightSource Vec3f, lightIntensity, xs, ys, zs int
 }
 
 func display(pix [][]float64) {
-	fmt.Print("\033[2J")
+	fmt.Print("\033[15A")
 	for _, row := range pix {
 		for _, val := range row {
 			var c byte
@@ -186,14 +186,14 @@ func display(pix [][]float64) {
 
 func main() {
 	//pts := generateCube(&Vec3f{10, 10, 8}, 3)
-	g := NewCubeGenerator(Vec3f{10, 10, 8}, 3, 1)
+	g := NewCubeGenerator(Vec3f{10, 10, 8}, 3, 0.2)
 	pix := render(g, Vec3f{0, -2, 0}, 12, 15, 15, 15)
 	display(pix)
 
 	time.Sleep(3*time.Second)
 
 	//pts = generateCube(&Vec3f{3, 10, 8}, 3)
-	g = NewCubeGenerator(Vec3f{3, 10, 8}, 3, 1)
+	g = NewCubeGenerator(Vec3f{3, 10, 8}, 3, 0.2)
 	pix = render(g, Vec3f{0, -2, 0}, 12, 15, 15, 15)
 	display(pix)
 	
